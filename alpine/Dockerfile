@@ -12,9 +12,7 @@ LABEL maintainer="Evan Wies <evan@neomantra.net>"
 ARG RESTY_IMAGE_BASE="alpine"
 ARG RESTY_IMAGE_TAG="3.16"
 ARG RESTY_VERSION="1.21.4.1"
-ARG RESTY_OPENSSL_VERSION="1.1.1q"
-ARG RESTY_OPENSSL_PATCH_VERSION="1.1.1f"
-ARG RESTY_OPENSSL_URL_BASE="https://www.openssl.org/source"
+ARG RESTY_BORINGSSL_REVISION="b2536a2"
 ARG RESTY_PCRE_VERSION="8.45"
 ARG RESTY_PCRE_BUILD_OPTIONS="--enable-jit"
 ARG RESTY_PCRE_SHA256="4e6ce03e0336e8b4a3d6c2b70b1c5e18590a5673a98186da90d4f33c23defc09"
@@ -60,6 +58,7 @@ ARG RESTY_EVAL_POST_MAKE=""
 
 # These are not intended to be user-specified
 ARG _RESTY_CONFIG_DEPS="--with-pcre \
+    --add-dynamic-module=/usr/local/openresty/ngx_brotli \
     --with-cc-opt='-DNGX_LUA_ABORT_AT_PANIC -I/usr/local/openresty/pcre/include -I/usr/local/openresty/openssl/include' \
     --with-ld-opt='-L/usr/local/openresty/pcre/lib -L/usr/local/openresty/openssl/lib -Wl,-rpath,/usr/local/openresty/pcre/lib:/usr/local/openresty/openssl/lib' \
     "
@@ -67,9 +66,7 @@ ARG _RESTY_CONFIG_DEPS="--with-pcre \
 LABEL resty_image_base="${RESTY_IMAGE_BASE}"
 LABEL resty_image_tag="${RESTY_IMAGE_TAG}"
 LABEL resty_version="${RESTY_VERSION}"
-LABEL resty_openssl_version="${RESTY_OPENSSL_VERSION}"
-LABEL resty_openssl_patch_version="${RESTY_OPENSSL_PATCH_VERSION}"
-LABEL resty_openssl_url_base="${RESTY_OPENSSL_URL_BASE}"
+LABEL resty_boringssl_revision="${RESTY_BORINGSSL_REVISION}"
 LABEL resty_pcre_version="${RESTY_PCRE_VERSION}"
 LABEL resty_pcre_build_options="${RESTY_PCRE_BUILD_OPTIONS}"
 LABEL resty_pcre_sha256="${RESTY_PCRE_SHA256}"
@@ -85,8 +82,11 @@ LABEL resty_pcre_options="${RESTY_PCRE_OPTIONS}"
 
 RUN apk add --no-cache --virtual .build-deps \
         build-base \
+        cmake \
         coreutils \
         curl \
+        go \
+        git \
         gd-dev \
         geoip-dev \
         libxslt-dev \
@@ -106,26 +106,16 @@ RUN apk add --no-cache --virtual .build-deps \
     && cd /tmp \
     && if [ -n "${RESTY_EVAL_PRE_CONFIGURE}" ]; then eval $(echo ${RESTY_EVAL_PRE_CONFIGURE}); fi \
     && cd /tmp \
-    && curl -fSL "${RESTY_OPENSSL_URL_BASE}/openssl-${RESTY_OPENSSL_VERSION}.tar.gz" -o openssl-${RESTY_OPENSSL_VERSION}.tar.gz \
-    && tar xzf openssl-${RESTY_OPENSSL_VERSION}.tar.gz \
-    && cd openssl-${RESTY_OPENSSL_VERSION} \
-    && if [ $(echo ${RESTY_OPENSSL_VERSION} | cut -c 1-5) = "1.1.1" ] ; then \
-        echo 'patching OpenSSL 1.1.1 for OpenResty' \
-        && curl -s https://raw.githubusercontent.com/openresty/openresty/master/patches/openssl-${RESTY_OPENSSL_PATCH_VERSION}-sess_set_get_cb_yield.patch | patch -p1 ; \
-    fi \
-    && if [ $(echo ${RESTY_OPENSSL_VERSION} | cut -c 1-5) = "1.1.0" ] ; then \
-        echo 'patching OpenSSL 1.1.0 for OpenResty' \
-        && curl -s https://raw.githubusercontent.com/openresty/openresty/ed328977028c3ec3033bc25873ee360056e247cd/patches/openssl-1.1.0j-parallel_build_fix.patch | patch -p1 \
-        && curl -s https://raw.githubusercontent.com/openresty/openresty/master/patches/openssl-${RESTY_OPENSSL_PATCH_VERSION}-sess_set_get_cb_yield.patch | patch -p1 ; \
-    fi \
-    && ./config \
-      no-threads shared zlib -g \
-      enable-ssl3 enable-ssl3-method \
-      --prefix=/usr/local/openresty/openssl \
-      --libdir=lib \
-      -Wl,-rpath,/usr/local/openresty/openssl/lib \
-    && make -j${RESTY_J} \
-    && make -j${RESTY_J} install_sw \
+    && git clone --depth=1 --recurse-submodules https://github.com/google/ngx_brotli /usr/local/openresty/ngx_brotli \
+    && rm -rf /usr/local/openresty/ngx_brotli/.git \
+    && curl -fSL https://boringssl.googlesource.com/boringssl/+archive/${RESTY_BORINGSSL_REVISION}.tar.gz -o boringssl-${RESTY_BORINGSSL_REVISION}.tar.gz \
+    && mkdir -p boringssl-${RESTY_BORINGSSL_REVISION}/build /usr/local/openresty/openssl/lib \
+    && tar xzf boringssl-${RESTY_BORINGSSL_REVISION}.tar.gz -C boringssl-${RESTY_BORINGSSL_REVISION} \
+    && cd /tmp/boringssl-${RESTY_BORINGSSL_REVISION} \
+    && cmake -B build -DBUILD_SHARED_LIBS=1 -DCMAKE_BUILD_TYPE=Release \
+    && make -C build -j${RESTY_J} \
+    && cp -r include /usr/local/openresty/openssl \
+    && cp build/crypto/libcrypto* build/ssl/libssl* /usr/local/openresty/openssl/lib \
     && cd /tmp \
     && curl -fSL https://downloads.sourceforge.net/project/pcre/pcre/${RESTY_PCRE_VERSION}/pcre-${RESTY_PCRE_VERSION}.tar.gz -o pcre-${RESTY_PCRE_VERSION}.tar.gz \
     && echo "${RESTY_PCRE_SHA256}  pcre-${RESTY_PCRE_VERSION}.tar.gz" | shasum -a 256 --check \
@@ -149,7 +139,7 @@ RUN apk add --no-cache --virtual .build-deps \
     && cd /tmp \
     && if [ -n "${RESTY_EVAL_POST_MAKE}" ]; then eval $(echo ${RESTY_EVAL_POST_MAKE}); fi \
     && rm -rf \
-        openssl-${RESTY_OPENSSL_VERSION}.tar.gz openssl-${RESTY_OPENSSL_VERSION} \
+        boringssl-${RESTY_BORINGSSL_REVISION}.tar.gz boringssl-${RESTY_BORINGSSL_REVISION} \
         pcre-${RESTY_PCRE_VERSION}.tar.gz pcre-${RESTY_PCRE_VERSION} \
         openresty-${RESTY_VERSION}.tar.gz openresty-${RESTY_VERSION} \
     && apk del .build-deps \
