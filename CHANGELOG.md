@@ -1,6 +1,42 @@
 Changelog
 =========
 
+## 1.21.4.2-1
+
+ * Update OpenSSL to `1.1.1w` for built-from-source flavors (#237)
+
+## 1.21.4.2-0
+
+ * Upgrade OpenResty to 1.21.4.2
+ * Bump `fedora` flavor to FC36.
+ * Upgrade LuaRocks to 3.9.2
+
+## 1.21.4.1-8
+
+ * Add Policies to README to clarify how we operate
+ * Upgraded Alpine to `3.18` for `alpine` not `alpine-apk`
+ * Update OpenSSL to `1.1.1u` for built-from-source flavors (#233)
+
+## 1.21.4.1-7
+
+ * Tagged rebuild to catch latest Alpine and more.
+ * Remove Fedora aarch64 build (#229)
+
+## 1.21.4.1-6
+
+ * Added `centos/Dockerfile.expat_example` of installing expat from source (#221)
+ * Upgraded Alpine to `3.17` for `alpine` not `alpine-apk` (#224)
+ * Update OpenSSL to 1.1.1t for built-from-source flavors
+
+## 1.21.4.1-5
+
+ * Adds `RESTY_EVAL_POST_DOWNLOAD_PRE_CONFIGURE` build argument to run patches
+   against OpenResty source download (#219).
+
+## 1.21.4.1-4
+
+ * Tag to update CI/CD with latest base images, 2022-11-30.
+
 ## 1.21.4.1-3
 
  * Update OpenSSL to 1.1.1q for built-from-source flavors (#212)
